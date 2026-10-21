@@ -617,15 +617,15 @@ class App(tk.Tk):
                     "Fraction of the film that stays on the wall (1 = all of it; no entrainment is modelled). "
                     "Lower it to anchor to test data.")
         self._field(s, 2, "film_h", "Gas-to-film h multiplier", t.film_h_scale, "× Bartz",
-                    "Scales the gas-to-film heat-transfer coefficient. Lucas & Golladay (NASA TN D-1988) needed a "
-                    "somewhat higher value in the convergent section and throat.")
+                    "Scales the gas-to-film heat-transfer coefficient. A recommended starting value is 1.8. Lucas & Golladay (NASA TN D-1988) needed a "
+                    "somewhat higher value than 1 in the convergent section and throat.")
         self._note(s, "Liquid film (Grisson, non-entrained, non-reacting), then gaseous film (Hatch & Papell, "
                       "no mixing, no reaction). See README.", row=3)
 
         s = self._section(tab, "Anchoring multipliers")
         self._field(s, 0, "hg_scale", "Gas-side h_g multiplier", t.hg_scale, "× Bartz",
                     "Scales the Bartz gas-side coefficient everywhere, e.g. 0.7 to anchor to test data "
-                    "or a CFD estimate. 1.0 = Bartz as published.")
+                    "or a CFD estimate. 1.0 = Bartz as published.  PDMS may apply a scalar of ~0.8.")
         self._field(s, 1, "hc_scale", "Coolant-side h_c multiplier", t.hc_scale, "×",
                     "Scales the coolant-side coefficient from the Nusselt correlation (applied before the "
                     "fin correction). 1.0 = correlation as published.")
