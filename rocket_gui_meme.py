@@ -171,8 +171,8 @@ class MemeApp(rg.App):
                     child.tab(tab, text=TABS.get(old, old))
             self._rename_tabs(child)
 
-    def _section(self, parent, text):
-        return super()._section(parent, f"{text} {random.choice(['💩', '🚀', '🔥', '😎', '👌', '💯', '🤔'])}")
+    def _section(self, parent, text, **kw):
+        return super()._section(parent, f"{text} {random.choice(['💩', '🚀', '🔥', '😎', '👌', '💯', '🤔'])}", **kw)
 
     def _cards(self, parent, names):
         """Same tiles as the real GUI (keyed by the real names), with better (worse) labels."""
@@ -201,8 +201,8 @@ class MemeApp(rg.App):
     def _placeholder(self, key, msg="Smash SEND IT to see results (no cap) 💩"):
         super()._placeholder(key, msg)
 
-    def _ax(self, key, title, nrows=1):
-        fig, axes = super()._ax(key, f"{title}   ({random.choice(DOGE)})", nrows)
+    def _ax(self, key, title, nrows=1, **kw):
+        fig, axes = super()._ax(key, f"{title}   ({random.choice(DOGE)})", nrows, **kw)
         fig.text(0.995, 0.005, f"© {BRAND} — all rights reserved, no refunds", ha="right", va="bottom",
                  fontsize=8, color=rg.MUTED, alpha=0.8)
         return fig, axes

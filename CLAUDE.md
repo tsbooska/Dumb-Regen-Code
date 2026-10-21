@@ -24,6 +24,11 @@ the models and the known limitations.
 - Pixel sizes (widths, wraplength) go through `self.px(n)` so they scale with Windows DPI.
 - Test GUI changes headlessly: create `App()`, call `withdraw()`, call `run()`, pump `update()`
   until `app.result` is set, then save figures with `fig.savefig`. Never take screen captures. Stub
-  `rocket_gui._save_theme` in tests so they don't overwrite the user's theme preference.
+  `rocket_gui._save_prefs` in tests (it backs `_save_theme` too) so they don't overwrite the user's
+  preferences. Layout checks (widget sizes, scrollbars, wheel scrolling) need a mapped window: use
+  `app.attributes("-alpha", 0)` instead of `withdraw()`. Only the `__main__` entry point calls
+  `restore_window()`, so tests never read or save the user's window state.
+- Matplotlib figures are made at `dpi=96`; matplotlib applies the display scaling itself. Don't pass
+  `96 * ui_scale` (that double-scales and the plot overflows its canvas).
 - After changing physics, check that `py -3.14 shitty_rocket_code.py` output is unchanged and that
   the thermal energy balance still closes.
