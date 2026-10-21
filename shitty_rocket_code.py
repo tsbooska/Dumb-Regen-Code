@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 try:
+    from rocketcea.cea_obj import add_new_fuel
     from rocketcea.cea_obj_w_units import CEA_Obj
 except ImportError:  # pragma: no cover
     sys.exit("RocketCEA is required:  pip install rocketcea")
@@ -102,6 +103,16 @@ class EngineInputs:
 # --------------------------------------------------------------------------------------
 # Thermochemistry / performance
 # --------------------------------------------------------------------------------------
+# Liquid isopropyl alcohol. RocketCEA's own "Isopropanol" card uses the GAS heat of formation
+# (-65133 cal/mol = -272.5 kJ/mol), which overstates the propellant energy by the heat of vaporisation.
+# This card uses the liquid value, -318.1 kJ/mol (CRC Handbook, Standard Thermodynamic Properties of
+# Chemical Substances), and the liquid density at 25 °C.
+add_new_fuel("IPA", """
+fuel IPA(L)  C 3 H 8 O 1   wt%=100.
+h,cal=-76028.7   t(k)=298.15   rho=0.781
+""")
+
+
 def make_cea(ox: str, fuel: str) -> CEA_Obj:
     return CEA_Obj(
         oxName=ox, fuelName=fuel,

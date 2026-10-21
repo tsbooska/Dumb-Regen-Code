@@ -116,9 +116,10 @@ def _save_theme(name: str) -> None:
 _use_palette(_load_theme())
 
 OXIDIZERS = ["LOX", "GOX", "N2O", "N2O4", "H2O2", "IRFNA", "MON25", "F2"]
-FUELS = ["RP-1", "Ethanol", "Methanol", "CH4", "LCH4_NASA", "LH2", "GH2", "MMH", "UDMH", "N2H4", "A50",
+FUELS = ["RP-1", "Ethanol", "IPA", "Methanol", "CH4", "LCH4_NASA", "LH2", "GH2", "MMH", "UDMH", "N2H4", "A50",
          "JetA", "Propane"]
 COOLANTS = {"Auto (from fuel)": "auto", "RP-1 (n-Dodecane surrogate)": "n-Dodecane", "Ethanol": "Ethanol",
+            "Isopropanol (built-in model)": "Isopropanol",
             "Methanol": "Methanol", "Methane": "Methane", "Propane": "Propane", "Hydrogen": "Hydrogen",
             "Ammonia": "Ammonia", "Nitrous oxide": "NitrousOxide", "Oxygen": "Oxygen"}
 MATERIALS = {m.label: m.k for m in mat.MATERIALS.values()}   # label -> room-temperature k [W/m-K]
@@ -140,7 +141,7 @@ PRESETS = {
 }
 
 CARD_NAMES = ["Isp (design)", "Isp (vacuum)", "Thrust", "Mass flow", "c*", "Throat diameter",
-              "Exit diameter", "Total length", "Max hot-wall T", "Regen ΔP", "Feed pressure", "Orifice diameter",
+              "Exit diameter", "Max hot-wall T", "Regen ΔP", "Feed pressure", "Orifice diameter",
               "Liquid film length"]
 STRUCT_CARD_NAMES = ["Max von Mises stress", "Max principal stress", "Min yield SF", "Fatigue life",
                      "Buckling margin"]
@@ -494,7 +495,9 @@ class App(tk.Tk):
 
         s = self._section(tab, "Propellants")
         self._combo(s, 0, "ox", "Oxidizer", OXIDIZERS, e.ox, "Oxidizer name as used by NASA CEA.")
-        self._combo(s, 1, "fuel", "Fuel", FUELS, e.fuel, "Fuel name as used by NASA CEA.")
+        self._combo(s, 1, "fuel", "Fuel", FUELS, e.fuel, "Fuel name as used by NASA CEA. 'IPA' is liquid "
+                    "isopropyl alcohol (this tool's card; RocketCEA's 'Isopropanol' card uses the gas-phase "
+                    "heat of formation).")
         self._field(s, 2, "of", "Mixture ratio O/F (core)", e.of_ratio, "-",
                     "CORE oxidizer mass flow / CORE fuel mass flow. Film-cooling fuel is not included "
                     "(set the film on the Cooling tab, as a % of the core flow).")
@@ -544,7 +547,8 @@ class App(tk.Tk):
                              if v == rt.COOLANT_ALIASES.get(t.coolant, t.coolant)), t.coolant)
         self._combo(s, 0, "coolant", "Property model", list(COOLANTS), cool_default,
                     "The coolant is the fuel at the full fuel flow. 'Auto' selects the CoolProp fluid from the "
-                    "fuel name (RP-1 uses the n-Dodecane surrogate). Any CoolProp fluid name can be typed.")
+                    "fuel name (RP-1 uses the n-Dodecane surrogate; IPA uses the built-in isopropanol "
+                    "correlations, as CoolProp has none). Any CoolProp fluid name can be typed.")
         self._field(s, 1, "t_in", "Inlet temperature", t.t_in_K, "K",
                     "Fuel temperature entering the cooling jacket.")
         self._check(s, 2, "counterflow", "Counterflow (enters at the nozzle exit)", t.counterflow,
@@ -1057,7 +1061,6 @@ class App(tk.Tk):
         self._card("c*", f"{p['cstar']:.0f} m/s", f"Tc {p['tc']:.0f} K")
         self._card("Throat diameter", f"{s['dt'] * 1e3:.2f} mm", f"chamber {s['dc'] * 1e3:.1f} mm")
         self._card("Exit diameter", f"{s['de'] * 1e3:.2f} mm", f"ε = {p['eps']:.2f}")
-        self._card("Total length", f"{s['length_total'] * 1e3:.1f} mm", f"L* {i.lstar_m:g} m")
         if res:
             tmax = self._tmax(res)
             margin = th.t_wall_limit_K - tmax

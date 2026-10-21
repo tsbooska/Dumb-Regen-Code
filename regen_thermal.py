@@ -112,11 +112,14 @@ FUEL_COOLPROP = {"RP-1": "n-Dodecane", "RP1": "n-Dodecane", "JetA": "n-Dodecane"
                  "Ethanol": "Ethanol", "C2H5OH(L)": "Ethanol", "Methanol": "Methanol", "CH3OH(L)": "Methanol",
                  "CH4": "Methane", "LCH4_NASA": "Methane", "CH4(L)": "Methane", "LH2": "Hydrogen",
                  "GH2": "Hydrogen", "H2": "Hydrogen", "Propane": "Propane", "C3H8(L)": "Propane",
-                 "NH3": "Ammonia", "Isopropanol": "IsopropylAlcohol"}
+                 "NH3": "Ammonia", "Isopropanol": "Isopropanol", "IPA": "Isopropanol"}
+
+# Coolants CoolProp lacks, served by built-in correlation models (see isopropanol.py)
+BUILTIN_COOLANTS = {"isopropanol", "ipa", "isopropylalcohol", "2-propanol"}
 
 
 def make_coolant(design: EngineDesign, th: ThermalInputs, warnings: list[str]):
-    """Property model for the fuel-as-coolant: table > explicit CoolProp name > auto from the fuel."""
+    """Property model for the fuel-as-coolant: table > explicit name > auto from the fuel."""
     if th.coolant_table:
         return TableCoolant(th.coolant_table, warnings)
     name = th.coolant
@@ -129,6 +132,9 @@ def make_coolant(design: EngineDesign, th: ThermalInputs, warnings: list[str]):
         if name == "n-Dodecane":
             _warn(warnings, f"{fuel} is modeled with the CoolProp n-Dodecane surrogate. "
                             "Supply a property table for real data.")
+    if name.lower() in BUILTIN_COOLANTS:
+        from isopropanol import IsopropanolCoolant
+        return IsopropanolCoolant(warnings)
     return Coolant(name, warnings)
 
 
@@ -184,6 +190,28 @@ class Coolant:
 
     def t_sat(self, p: float) -> float | None:
         return PropsSI("T", "P", p, "Q", 0, self.name) if p < self.p_crit else None
+
+    def h_liquid(self, t: float, p: float) -> float:
+        """Enthalpy at (t, p) with no clamping (film model)."""
+        return PropsSI("H", "T", t, "P", p, self.name)
+
+    def saturation(self, p: float) -> dict:
+        """Film-model data at pressure p: where the liquid region ends (saturation, or the pseudo-critical
+        temperature above p_crit), latent heat, enthalpy at that end, vapour c_p and k, molar mass."""
+        from film_cooling import pseudo_critical_temperature
+        n = self.name
+        supercritical = bool(p >= self.p_crit)
+        if supercritical:
+            t_end = pseudo_critical_temperature(n, p)
+            h_fg, h_end = 0.0, PropsSI("H", "T", t_end - 0.01, "P", p, n)
+            cp_v, k_v = (PropsSI(q, "T", t_end + 5.0, "P", p, n) for q in ("C", "L"))
+        else:
+            t_end = PropsSI("T", "P", p, "Q", 0, n)
+            h_end = PropsSI("H", "P", p, "Q", 0, n)
+            h_fg = PropsSI("H", "P", p, "Q", 1, n) - h_end
+            cp_v, k_v = (PropsSI(q, "P", p, "Q", 1, n) for q in ("C", "L"))
+        return dict(supercritical=supercritical, t_end=t_end, h_fg=h_fg, h_end=h_end, cp_v=cp_v, k_v=k_v,
+                    mw=PropsSI("M", n))
 
 
 class TableCoolant:

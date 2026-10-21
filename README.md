@@ -141,7 +141,8 @@ rocket_gui.py           Collects inputs, calls design_engine, optimize_channels 
 | `injector.py` | `solve_feed_system`, `size_orifices`, `ox_density`, `print_feed_report` |
 | `regen_optimize.py` | `optimize_channels`, `OptimizerInputs`, `print_optimize_report` |
 | `wall_stress.py` | `wall_stresses`, `StressInputs`, `print_stress_report`, `POINTS` (check points and signs), `DEFINITIONS` (report text for each stress) |
-| `materials.py` | `MATERIALS`, `get`, `prop` (E, α, ν, yield, ultimate, RA versus temperature; room-temperature k), `cycles_to_failure`, `LCF` |
+| `materials.py` | `MATERIALS`, `get`, `prop` (E, α, ν, yield, ultimate, RA versus temperature; room-temperature k), `cycles_to_failure`, `LCF`, `StrainLife` |
+| `isopropanol.py` | `IsopropanolCoolant` (IPA liquid with the `Coolant` interface; CoolProp has no IPA), property functions `density`, `viscosity`, `conductivity`, `cp_liquid`, `enthalpy`, `p_sat`, `t_saturation`, `h_fg` (Appendix B) |
 | `rocket_gui.py` | `App` (Tkinter). `_collect` builds the dataclasses; `_work` runs the analysis; `_fill_stats` and `_fill_structures` fill the Summary and Structures tabs |
 
 Coordinates: x = 0 at the throat, negative toward the injector. SI units internally; inputs and
@@ -170,7 +171,8 @@ T_aw → 1/h_g (Bartz) → T_wg → t_w/k_w → T_wc → 1/h_c,eff → T_b.
 - Each station is iterated on T_wg and T_wc. The coolant enthalpy is marched in the flow direction
   (counterflow by default). Pressure drop is Darcy friction with the Haaland friction factor.
 - Coolant = the fuel at the full fuel flow. Properties come from CoolProp, auto-mapped from the CEA
-  fuel name (RP-1 → n-Dodecane surrogate), or from a CSV table (T_K, rho, mu, cp, k).
+  fuel name (RP-1 → n-Dodecane surrogate), from the built-in isopropanol model for IPA (CoolProp has
+  none; `isopropanol.py`, Appendix B), or from a CSV table (T_K, rho, mu, cp, k).
 - Channel geometry is given at the cylinder (held constant), the throat and the exit, and
   interpolated linearly. Optionally, widths are auto-sized from a rib thickness given at each of
   those sections: w = 2π(r + t_w)/N − rib. The rib then varies linearly between sections.
@@ -184,7 +186,9 @@ and the film enters at the regen outlet temperature). Two regions, marched along
 1. **Liquid film** after Grisson (*Liquid Film Cooling in Rocket Engines*, AEDC-TR-91-1, 1991), as
    reviewed by Giambelli et al. (EUCASS 2023-648). Assumptions: non-reacting coolant, adiabatic
    film–wall interface, uniform core gas, and **no entrainment mass loss**; only convection from the gas
-   (no radiation). The liquid is heated, marched in enthalpy with CoolProp properties at Pc, to its
+   (no radiation). The liquid is heated, marched in enthalpy with the coolant model's properties at Pc
+   (CoolProp, or the built-in isopropanol model; a CSV property table cannot be used, as it has no
+   saturation data), to its
    saturation temperature and then evaporates:
    - heating: d(ṁ_L h_L) = h_g (T_aw − T_L) dA
    - evaporation: dṁ_L = −h_b (T_aw − T_sat) dA / h_fg
@@ -290,12 +294,17 @@ N_f comes from:
   - GRCop-42: Δε = 16.08·N^−0.3323 %, digitised from the wrought-GRCop-42 line in Gradl et al.
     AIAA 2019-4228, Fig. 2 (room temperature to 600 °C pooled, 561–19 400 cycles). The figure's axis
     reads mm/mm, but the values are percent.
+  - AlSi10Mg: modified Basquin–Coffin–Manson fit, ε_a = Δε/2 = (σ′_f/E)(2N)^b + ε′_f(2N)^c + ε_fat, with
+    σ′_f = 300 MPa, b = −0.30, ε′_f = 0.10, c = −0.4, E = 70 GPa and the endurance strain ε_fat =
+    1.06·10⁻³ (Concli et al., *Int. J. Fatigue* 177 (2023) 107931, Eq. 23, Tables 10–11). As built,
+    as-built surface, room temperature only. Below ε_fat the life is unlimited. N is found by bisection.
+    See Appendix A.
 - **Manson's method of universal slopes** (Manson, *Exp. Mech.* 5 (1965) 193) where only tensile data
   exist: Δε = 3.5(S_u/E)·N^−0.12 + D^0.6·N^−0.6, with ductility D = ln(1/(1−RA)) and S_u, E and RA at
   the face temperature. Inconel 718 uses Special Metals Table 20 RA; 6061-T6 uses Summers et al.
   Fig. 11 RA. This is an estimate and is labelled as one.
-- **No fatigue data:** Copper C101, SS 316L and AlSi10Mg (no reduction-of-area data in the sources);
-  life is not computed.
+- **No fatigue data:** Copper C101 and SS 316L (no reduction-of-area data in the sources); life is
+  not computed.
 
 Allowable firings = N_f / life factor (default 4, a scatter factor on mean-curve life). Lives outside
 the test data's cycle or temperature range are flagged as extrapolated.
@@ -321,7 +330,7 @@ constant, also with a warning.
 | GRCop-42 | Wrought; L-PBF reported equivalent | 346 | 20–800 °C | Measured (digitised line) | Yield, UTS, α, k, fatigue: Gradl et al., AIAA 2019-4228, Figs. 1, 2, 5, 6, 7, digitised from the vector figures. E: Mahtabi et al., *JOM* 77 (2025), room temperature, held constant. ν: pure copper (NIST Monograph 177) |
 | Copper C101 | Annealed OFHC | 390 | 20–482 °C | None | Yield 34 MPa (5 ksi) and UTS 69 MPa (10 ksi, held constant): NASA Tech Brief 66-10273 (1966), braze-coarsened OFHC. E, α, ν at 295 K: NIST Monograph 177. k: typical handbook value, not re-verified |
 | Al 6061-T6 | T6 / T651 | 174 | 24–427 °C | Universal slopes (estimate) | Yield, UTS: Kaufman (2000) data in Summers et al., *Fire Sci. Rev.* 4:3 (2015), Figs. 9–10, read from the figures. RA: Fig. 11. E: Eurocode 9 values in the same paper, Fig. 8. α: EN 1999-1-2 thermal-elongation equation. ν = 0.3: EN 1999-1-1. k: Summers Fig. 1 |
-| AlSi10Mg | L-PBF, as built | 100 | 25–400 °C | None | E, yield, UTS: Cao et al., *J. Mater. Sci. Technol.* 62 (2021) 162, Table 3. k, α: EOS process data sheet (M 290, 30 µm). ν = 0.3: EN 1999-1-1 |
+| AlSi10Mg | L-PBF, as built | 120 | 25–400 °C | Measured (Basquin–Coffin–Manson, room temperature) | E, yield, UTS: Cao et al., *J. Mater. Sci. Technol.* 62 (2021) 162, Table 3. k: Martínez-Maradiaga et al., *J. Mater. Eng. Perform.* 29 (2020) 7125, Table 1. Fatigue: Concli et al., *Int. J. Fatigue* 177 (2023) 107931. α: EOS process data sheet (M 290, 30 µm). ν = 0.3: EN 1999-1-1. Details in Appendix A |
 | Inconel 718 | Annealed 1800 °F + aged | 11.4 | 27–704 °C | Universal slopes (estimate) | Special Metals SMC-045 (2007): Tables 4 (E, ν), 5 (k, α), 20 (yield, UTS, RA) |
 | SS 316L | Annealed, typical 316/316L | 16.2 (at 100 °C) | 20–871 °C | None | AK Steel 316/316L bulletin: Tables 1–2 (yield, UTS), α, k. E 193 GPa at room temperature, held constant. ν = E/2G − 1 |
 
@@ -336,7 +345,7 @@ where E or α would fall with temperature, and under-predict it where α would r
 - CoolProp's n-Dodecane model stops at 700 K. Wall-side property lookups above that are clamped,
   with a warning. Supply a real RP-1 property table for better accuracy.
 - Not modeled: radiation, axial conduction, wall curvature, temperature-dependent wall conductivity,
-  boiling and coking, film cooling, manifold or feed-line losses, and compressible (gas) injector
+  boiling and coking, manifold or feed-line losses, and compressible (gas) injector
   flow (a warning is shown).
 - Film cooling is a preliminary estimate. It has no entrainment, no radiation, no mixing or reaction of
   the vapour with the core, and no film thrust. The vapour layer is assumed to move at the gas velocity.
@@ -358,6 +367,13 @@ where E or α would fall with temperature, and under-predict it where α would r
 - Material data are typical or average values from the sources above, not design minimums
   (A- or B-basis). Additively made properties depend strongly on process, orientation and heat
   treatment.
+- AlSi10Mg fatigue data are at room temperature only, so lives at hot points are flagged as extrapolated.
+  Its solidus is about 830 K (≈ 557 °C), and its strength is nearly gone by 400 °C, so the hot-wall
+  limit for an AlSi10Mg liner should be set far below the 800 K default.
+- Isopropanol coolant (Appendix B): saturated-liquid properties with no pressure correction. Liquid c_p
+  above 473 K is extrapolated, and the model is capped at 0.98 T_c (498 K). There is no
+  supercritical/pseudo-critical model, and boiling is flagged but not modelled. IPA's critical point
+  (508 K, 47.6 bar) is close to typical regen outlet conditions, so check the boiling warnings.
 
 ## Checks that have passed
 
@@ -380,3 +396,118 @@ where E or α would fall with temperature, and under-predict it where α would r
 - Fatigue life and buckling stress agree with hand calculations. CuCrZr at Δε = 0.874 % gives
   N ≈ 2 900 cycles from the Coffin–Manson fit. S_c in the chamber implies E = 70.4 GPa, the UKAEA fit at
   the 480 °C mean wall temperature.
+- AlSi10Mg fatigue: the implemented fit gives about 990 cycles at a strain amplitude of 6.3·10⁻³. Concli
+  et al. compare this against other AlSi10Mg data, which show about 1 000 cycles at 4–6·10⁻³.
+- Isopropanol: see the checks in Appendix B (handbook spot values; the analytic enthalpy matches
+  numerical integration of c_p; the thermal energy balance closes exactly with IPA as the coolant, film
+  off and on). With the IPA, AlSi10Mg and film-refactor changes, the default outputs of
+  `shitty_rocket_code.py`, `regen_thermal.py` and `injector.py` are unchanged.
+
+## Appendix A: AlSi10Mg material data review
+
+Scope: L-PBF AlSi10Mg in the **as-built** condition, the state a printed liner is in unless it is heat
+treated. All values are typical or mean values, not design allowables.
+
+| Property | Before | Now | Source and notes |
+|---|---|---|---|
+| Thermal conductivity k (room temperature, used by the thermal circuit) | 100 W/m·K (EOS data sheet, vertical) | **120 W/m·K** | Martínez-Maradiaga, Mishin & Engelbrecht, "Thermal properties of selectively laser melted AlSi10Mg products with different densities", *J. Mater. Eng. Perform.* 29 (2020) 7125–7130, Table 1: laser flash measurements, as built, 25 °C. 99.5 % dense: 120 (⊥ build) and 122 (∥ build) W/m·K. 99 % dense: 115 and 115. The paper notes these match die-cast alloys of similar composition. EOS quotes 100–110 W/m·K as manufactured. |
+| Strength at temperature (yield, UTS, E) | Cao et al. 2021, Table 3 | **Unchanged** | Cao et al., *J. Mater. Sci. Technol.* 62 (2021) 162–172, Table 3: as built, tested at 25–400 °C after a 30 min hold. Yield 322 / 298 / 236 / 143 / 25 MPa and UTS 460 / 382 / 266 / 150 / 30 MPa at 25 / 100 / 200 / 300 / 400 °C. E 76 → 18 GPa. The trend agrees with Uzan et al., *Addit. Manuf.* 24 (2018) 257 (stress relieved, 25–400 °C): yield falls sharply above 200 °C, and UTS falls steadily. |
+| Fatigue | None (life not computed) | **Measured strain–life curve** | Concli, Gerosa, Panzeri & Fraccaroli, "High and low cycle fatigue properties of selective laser melted AISI 316L and AlSi10Mg", *Int. J. Fatigue* 177 (2023) 107931 (open access). Fully reversed LCF (ASTM E606) and HCF, as built with as-built surfaces, room temperature. Modified Basquin–Coffin–Manson (Eq. 23, Table 11): σ′_f = 300 MPa, b = −0.30, ε′_f = 0.10, c = −0.4, ε_fat = 1.06·10⁻³ (the 123 MPa fatigue limit at R = −1 over E = 70 GPa; Tables 6 and 10). Test lives 13 to 8.5·10⁵ cycles. |
+| α, ν | EOS; EN 1999-1-1 | Unchanged | — |
+
+Notes for use:
+- **Conductivity rises once the wall anneals.** Above about 250 °C the as-built cellular Si network
+  breaks up (Martínez-Maradiaga et al., Sec. 4). After one heating to 400 °C, k at 25 °C is 140–152
+  W/m·K, and at 400 °C it is 144–189 W/m·K. A liner that has fired is therefore more conductive than
+  the 120 used here (conservative for wall temperature), but also weaker: strength drops with the
+  same coarsening.
+- **The fatigue curve is conservative for a machined or polished channel**: it uses as-built rough
+  surfaces and sub-surface porosity. It has no temperature dependence. Hot dwell-fatigue tests on
+  L-PBF AlSi10Mg report shorter lives at 250 °C than at 100 °C (cyclic softening), so lives at hot
+  points are unconservative as well as extrapolated, and are flagged.
+- **Not used:** Khan, Yadav, Gradl, Shao & Shamsaei, *Mater. Des.* 265 (2026) 115902, which has
+  strain-controlled fatigue of L-PBF AlSi10Mg from −195 to 200 °C (NASA MSFC co-author) and would be the
+  best source for a temperature-dependent curve. Its full text could not be retrieved, and the search
+  snippets disagreed on its fit constants, so none were used. Worth adding if you have access.
+- The solidus is about 557 °C (830 K). Set `t_wall_limit_K` well below that for an aluminium liner.
+
+## Appendix B: Isopropyl alcohol (IPA) as propellant and coolant
+
+**As a reactant (`shitty_rocket_code.py`).** RocketCEA ships an "Isopropanol" card, but its enthalpy
+is −65 133 cal/mol = −272.5 kJ/mol, the **gas-phase** heat of formation. That overstates the energy of
+a liquid propellant by the heat of vaporisation. The tool therefore registers its own fuel card,
+**`IPA`** (`add_new_fuel`): C₃H₈O, h = −318.1 kJ/mol (liquid, CRC Handbook) = −76 028.7 cal/mol at
+298.15 K, ρ = 0.781 g/cm³. No surrogate is needed; CEA has the species. Effect at Pc = 20 bar, ε = 4,
+O/F 1.4–2.0:
+
+| O/F | Isp, stock card [s] | Isp, `IPA` card [s] | T_c, stock [K] | T_c, `IPA` [K] |
+|---|---|---|---|---|
+| 1.4 | 283.1 | 277.2 | 3027 | 2935 |
+| 1.6 | 289.2 | 284.8 | 3234 | 3175 |
+| 1.8 | 290.5 | 287.2 | 3333 | 3292 |
+| 2.0 | 288.4 | 285.8 | 3372 | 3339 |
+
+Select `IPA` (GUI fuel list, or `--fuel IPA`). `Isopropanol` still works but uses the stock card.
+
+**As a coolant (`isopropanol.py`).** CoolProp has no IPA. `IsopropanolCoolant` implements the same
+interface as the CoolProp wrapper (props, h, T(h), T_sat, and saturation data for the film model) from
+published correlations. Coolant "auto" with fuel `IPA` or `Isopropanol` selects it, as does the GUI
+entry "Isopropanol (built-in model)". Coefficients (CAS 67-63-0) were transcribed from the data tables
+in the `chemicals` Python package v1.5.2 (C. Bell et al.), which reproduce the primary sources below.
+τ = 1 − T/T_c, with T_c = 508.25 K and p_c = 47.62 bar.
+
+| Property | Correlation | Source | Range used |
+|---|---|---|---|
+| Liquid density | ρ = ρ_c + Aτ^0.35 + Bτ^(2/3) + Cτ + Dτ^(4/3); ρ_c = 273, A = 865.9165, B = −744.0943, C = 975.9052, D = −381.1278 kg/m³ | VDI Heat Atlas, 2nd ed. (Springer 2010), Sec. D3, PPDS | to T_c |
+| Liquid viscosity | μ = E·exp[A z^(1/3) + B z^(4/3)], z = (C−T)/(T−D); A = 3.07172, B = 3.84587, C = 580.414 K, D = −62.691 K, E = 7.42·10⁻⁶ Pa·s | VDI Heat Atlas, PPDS eq. 9 | 185–498 K |
+| Liquid conductivity | k = 0.2028 − 2.238·10⁻⁴T − 3.1·10⁻⁸T² + 8.3·10⁻¹¹T³ − 6.9·10⁻¹⁴T⁴ | VDI Heat Atlas, PPDS | 185–498 K |
+| Liquid c_p, enthalpy | c_p/R = Σ A_j (T/100 K)^(j−1), isobaric cubic splines 185–270, 270–360, 360–473.2 K; h = analytical integral, zero at 298.15 K | Zábranský, Růžička, Majer & Domalski, *Heat Capacity of Liquids: Critical Review and Recommended Values*, J. Phys. Chem. Ref. Data Monograph 6 (1996) | data to 473.2 K, extrapolated to 498 K with a warning |
+| Vapour pressure | ln(p/p_c) = (Aτ + Bτ^1.5 + Cτ^2.5 + Dτ^5)·T_c/T; A = −8.44737, B = 1.17402, C = −6.97876, D = 0.69248 | VDI Heat Atlas, PPDS (Wagner 2.5–5 form) | to T_c |
+| Latent heat | h_fg = R T_c (Aτ^(1/3) + Bτ^(2/3) + Cτ + Dτ² + Eτ⁶)/M; A = 14.13231, B = −18.02015, C = 33.713095, D = −20.808299, E = −7.959708 | VDI Heat Atlas, PPDS eq. 12 | to T_c |
+| Vapour c_p (film model) | ideal gas, c_p/R = 3.334 + 0.018853T + 3.644·10⁻⁵T² − 6.115·10⁻⁸T³ + 2.543·10⁻¹¹T⁴ | Poling, Prausnitz & O'Connell, *Properties of Gases and Liquids*, 5th ed. (2001), App. A | 50–1000 K |
+| Vapour conductivity (film model) | k = 0.001447 + 1.1·10⁻⁵T + 1.2455·10⁻⁷T² | VDI Heat Atlas, PPDS (low pressure) | — |
+
+Checks (model value vs handbook value):
+- Density at 298 K: 781.8 vs 781 kg/m³ (CRC).
+- Viscosity at 298 K: 2.01 vs 2.04 mPa·s.
+- c_p at 298 K: 2.58 vs 2.60 kJ/kg·K (CRC 156.5 J/mol·K).
+- Conductivity at 298 K: 0.135 vs 0.135 W/m·K.
+- p_sat at 355.36 K: 1.013 bar, so T_b = 355.4 K (CRC 355.4 K).
+- h_fg at T_b: 677 vs 663 kJ/kg (CRC 39.85 kJ/mol), +2 %.
+- The c_p splines are continuous at 270 and 360 K.
+- The analytic enthalpy matches trapezoidal integration of c_p to 0.1 J/kg; T(h(T)) returns T.
+- LOX/IPA, 4 kN, 20 bar: thermal energy balance Σq''dA = ṁ·Δh closes exactly (490.763 kW film off;
+  135.521 kW with 10 % film).
+
+Limitations:
+- Pressure effects on the compressed liquid are neglected: saturated-liquid values are used at all
+  pressures. This effect has not been quantified here.
+- Above 473 K, c_p is an extrapolation. There is no pseudo-critical model above p_c: the film's liquid
+  region then ends at 498 K, with a warning.
+- IPA saturates at 460 K at 20 bar and 481 K at 30 bar, so small LOX/IPA engines easily reach bulk
+  boiling. The existing boiling warnings apply.
+
+## Appendix C: thermal model compared with RPA (no film cooling)
+
+Full report: https://claude.ai/artifact/KHkSS3Ts4YqnMZDjRc9Ha9. RPA (Ponomarenko, *RPA: Tool for Liquid
+Propellant Rocket Engine Analysis*, 2012, and the RPA thermal-analysis documentation) uses the same
+series thermal circuit and fin form as this tool. The differences that matter, with film cooling
+excluded:
+
+- **Gas temperature:** RPA uses the ideal T_c; this tool's default is η_c*²·T_c.
+- **Gas-side correlation:** RPA offers Bartz, Ievlev or their average, plus optional H₂O/CO₂ radiation.
+- **Coolant-side correlation:** RPA uses fluid-specific Nusselt correlations. For kerosene,
+  0.021Re^0.8Pr^0.4(0.64 + 0.36T_c/T_wc); for other fluids, Dittus–Boelter. This tool defaults to
+  Sieder–Tate.
+
+Changing these one at a time in this tool (CuCrZr, k = 320 W/m·K) gives the following peak T_wg:
+
+| Case | Default | Ideal T_c | Dittus–Boelter | Both (RPA-like, Bartz mode) |
+|---|---|---|---|---|
+| LOX/RP-1 1.8 kN, 20 bar | 751 K | 801 K | 874 K | 943 K |
+| LOX/ethanol 2 kN, 20 bar | 853 K | 929 K | 1046 K | 1139 K |
+
+For the same engine input, RPA in Bartz mode is therefore expected to predict the **hotter** wall,
+mainly through the lower coolant-side coefficient and the higher gas temperature. Radiation, if
+enabled in RPA, adds to that. RPA's Ievlev and average modes were not reproduced here, so their
+direction relative to this tool is not established.

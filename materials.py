@@ -58,6 +58,24 @@ class LCF:
 
 
 @dataclass(frozen=True)
+class StrainLife:
+    """Measured Basquin-Coffin-Manson curve with an optional endurance term (fully reversed):
+    strain amplitude = sf/e (2N)^b + ef (2N)^c + e_lim. Below e_lim the life is unlimited."""
+    sf: float                       # Pa, fatigue strength coefficient
+    b: float
+    ef: float                       # fatigue ductility coefficient
+    c: float
+    e: float                        # Pa, modulus used in the fit
+    e_lim: float                    # endurance strain amplitude (0 for plain Basquin-Coffin-Manson)
+    n_range: tuple[float, float]
+    t_max: float
+    source: str
+
+    def amplitude(self, n: float) -> float:
+        return self.sf / self.e * (2 * n) ** self.b + self.ef * (2 * n) ** self.c + self.e_lim
+
+
+@dataclass(frozen=True)
 class Material:
     name: str
     label: str               # GUI label
@@ -69,7 +87,7 @@ class Material:
     nu: Table
     sy: Table | None         # Pa, 0.2 % yield
     su: Table | None         # Pa, ultimate tensile
-    lcf: LCF | None = None   # measured strain-life curve
+    lcf: LCF | StrainLife | None = None   # measured strain-life curve
     ra: Table | None = None  # reduction of area [-], for the universal-slopes estimate when lcf is None
 
 
@@ -98,6 +116,10 @@ EN1999 = "EN 1999-1-1 (Eurocode 9) section 3.2.5: nu = 0.3 for aluminium alloys"
 CAO = ("Cao, Lin, Wang, Shi, Ma, Kang, Huang, 'Microstructure evolution and mechanical properties at high "
        "temperature of selective laser melted AlSi10Mg', J. Mater. Sci. Technol. 62 (2021) 162-172, Table 3")
 EOS = "EOS GmbH, process data sheet 'EOS Aluminium AlSi10Mg for EOS M 290 | 30 um'"
+MARTINEZ = ("Martinez-Maradiaga, Mishin, Engelbrecht, 'Thermal properties of selectively laser melted AlSi10Mg "
+            "products with different densities', J. Mater. Eng. Perform. 29 (2020) 7125-7130, Table 1")
+CONCLI = ("Concli, Gerosa, Panzeri, Fraccaroli, 'High and low cycle fatigue properties of selective laser melted "
+          "AISI 316L and AlSi10Mg', Int. J. Fatigue 177 (2023) 107931, Eq. (23), Tables 6, 10-12")
 MANSON = ("Manson, 'Fatigue: a complex subject - some simple approximations', Experimental Mechanics 5(7) "
           "(1965) 193-226: method of universal slopes")
 
@@ -186,12 +208,17 @@ _MATERIALS = [
                 [(25, 32), (100, 40), (150, 46), (200, 56), (250, 47), (300, 69), (350, 80), (400, 95)], 0.01)),
     Material(
         name="AlSi10Mg", label="AlSi10Mg (AM aluminium)", condition="laser powder bed fusion, as built",
-        k=100.0, k_source=EOS + ": 100 W/m-K as manufactured, vertical (110 horizontal)",
+        k=120.0, k_source=(MARTINEZ + ": laser flash, 99.5 % dense, as built, 25 °C, 120 (XZ) / 122 (XY) W/m-K; "
+                           "EOS quotes 100-110 as manufactured. Rises to 140-190 W/m-K once the wall passes "
+                           "~250 °C and anneals"),
         E=_tab(CAO, [(25, 76), (100, 65), (200, 59), (300, 49), (400, 18)], GPA),
         alpha=_tab(EOS + ": mean CTE 25-100, 25-200, 25-300 °C", [(100, 20.0), (200, 22.0), (300, 27.0)], 1e-6),
         nu=_tab(EN1999, [(20, 0.30)]),
         sy=_tab(CAO, [(25, 322), (100, 298), (200, 236), (300, 143), (400, 25)], MPA),
-        su=_tab(CAO, [(25, 460), (100, 382), (200, 266), (300, 150), (400, 30)], MPA)),
+        su=_tab(CAO, [(25, 460), (100, 382), (200, 266), (300, 150), (400, 30)], MPA),
+        lcf=StrainLife(300 * MPA, -0.30, 0.10, -0.4, 70 * GPA, 1.06e-3, (13.0, 853349.0), 25 + C0,
+                       CONCLI + ": modified Basquin-Coffin-Manson fit, as built with as-built surface, room "
+                       "temperature, LCF + HCF data (lives 13 to 8.5e5 cycles)")),
     Material(
         name="Inconel 718", label="Inconel 718",
         condition="annealed 1800 °F + aged (strength: hot-rolled round, Table 20)",
@@ -257,7 +284,8 @@ def cycles_to_failure(name: str, d_eps: float, t: float, warnings: list[str] | N
                       ) -> tuple[float | None, str]:
     """Cycles to failure for a total strain range d_eps [-] at temperature t [K], and the method used.
 
-    Measured curve if the material has one; otherwise Manson's universal slopes,
+    Measured curve if the material has one (power law in the strain range, or a Basquin-Coffin-Manson
+    curve in the strain amplitude d_eps/2, solved for N by bisection); otherwise Manson's universal slopes,
         d_eps = 3.5 (S_u / E) N^-0.12 + D^0.6 N^-0.6,   D = ln(1 / (1 - RA)),
     with S_u, E and RA at t (an estimate); None when neither is available.
     """
@@ -266,7 +294,16 @@ def cycles_to_failure(name: str, d_eps: float, t: float, warnings: list[str] | N
         return float("inf"), "no strain"
     if m.lcf is not None:
         c = m.lcf
-        n = (d_eps / c.a) ** (1 / c.b)
+        if isinstance(c, StrainLife):
+            if d_eps / 2 <= c.e_lim:
+                return float("inf"), "measured (below endurance strain)"
+            lo, hi = -1.0, 12.0     # log10 N; amplitude falls monotonically with N
+            for _ in range(80):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if c.amplitude(10.0 ** mid) > d_eps / 2 else (lo, mid)
+            n = 10.0 ** (0.5 * (lo + hi))
+        else:
+            n = (d_eps / c.a) ** (1 / c.b)
         if not c.n_range[0] <= n <= c.n_range[1]:
             _warn(warnings, f"{m.name}: fatigue life extrapolated beyond the test data "
                             f"({c.n_range[0]:.0f}-{c.n_range[1]:.0f} cycles).")

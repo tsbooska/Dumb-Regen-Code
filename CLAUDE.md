@@ -8,8 +8,12 @@ the models and the known limitations.
 - Non-standard conventions (keep them everywhere): O/F means the CORE O/F, and the fuel film flow is a
   % of the CORE mass flow (core ox + core fuel), e.g. 1 kg/s core + 0.15 kg/s film = 15 %. See README.
 - All physics lives in shitty_rocket_code.py, regen_thermal.py, film_cooling.py, injector.py,
-  wall_stress.py and materials.py. rocket_gui.py only
+  wall_stress.py, materials.py and isopropanol.py. rocket_gui.py only
   collects inputs and displays results; keep physics out of it.
+- Coolant models share one interface (regen_thermal.Coolant: props, mu, h, t_from_h, t_sat, plus
+  h_liquid and saturation for the film model). film_cooling.py must go through it, never PropsSI by
+  name, because isopropanol is a built-in model that CoolProp lacks. Fuel `IPA` is this tool's liquid
+  card; RocketCEA's `Isopropanol` card uses the gas-phase heat of formation.
 - Inputs are dataclasses (EngineInputs, ThermalInputs, InjectorInputs). Defaults there feed the
   CLIs and the GUI, so CLI argparse defaults must read from the dataclass, not hard-code None.
 - GUI colours come from the `THEMES` / `PLOT_COLORS` palettes (light and dark). sv-ttk repaints

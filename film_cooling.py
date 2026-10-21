@@ -87,9 +87,9 @@ def film_profile(design, th, gas: dict, st: dict, cool, mdot_film: float, t_inj:
     """
     from regen_thermal import bartz_h, recovery_temperature
 
-    if not hasattr(cool, "p_crit"):
-        raise ValueError("Film cooling needs a CoolProp coolant model (not a property table): saturation "
-                         "and latent heat are taken from CoolProp.")
+    if not hasattr(cool, "saturation"):
+        raise ValueError("Film cooling needs a coolant model with saturation data (a CoolProp fluid or the "
+                         "built-in isopropanol model), not a property table.")
     fluid = cool.name
     x, r, ar, mach, da = st["x"], st["r"], st["ar"], st["mach"], st["da"]
     n = len(x)
@@ -97,29 +97,25 @@ def film_profile(design, th, gas: dict, st: dict, cool, mdot_film: float, t_inj:
                eta=np.full(n, np.nan), t_drive=np.full(n, np.nan), q_film=np.zeros(n))
 
     pc = gas["pc"]                                     # liquid properties and saturation at chamber pressure
-    mw_ratio = (design.perf["mw_c"] / (PropsSI("M", fluid) * 1e3)) ** 0.6
+    sat = cool.saturation(pc)
+    mw_ratio = (design.perf["mw_c"] / (sat["mw"] * 1e3)) ** 0.6
     m_c = th.film_efficiency * mdot_film               # film that stays on the wall
     h_scale = th.hg_scale * th.film_h_scale
 
-    supercritical = bool(pc >= cool.p_crit)
+    supercritical, t_end, h_fg = sat["supercritical"], sat["t_end"], sat["h_fg"]
     if supercritical:
         _warn(warnings, f"Chamber pressure is above the critical pressure of {fluid} "
                         f"({cool.p_crit / 1e5:.1f} bar): the film is supercritical (no latent heat). Its liquid "
                         "region is taken to end at the pseudo-critical temperature; treat the film length as an "
                         "extrapolation of the model.")
-        t_end = pseudo_critical_temperature(fluid, pc)
-        h_fg = 0.0
-    else:
-        t_end = PropsSI("T", "P", pc, "Q", 0, fluid)
-        h_fg = PropsSI("H", "P", pc, "Q", 1, fluid) - PropsSI("H", "P", pc, "Q", 0, fluid)
     if t_inj >= t_end:
         _warn(warnings, f"Film enters at {t_inj:.0f} K, at or above its saturation / pseudo-critical temperature "
                         f"({t_end:.0f} K): it flashes at injection.")
 
     t_l, m_l = min(t_inj, t_end), m_c
     # The liquid is marched in specific enthalpy (exact energy balance with variable c_p)
-    h_end = PropsSI("H", "T", t_end - 0.01, "P", pc, fluid) if supercritical else PropsSI("H", "P", pc, "Q", 0, fluid)
-    h_l = min(PropsSI("H", "T", t_l - 0.01, "P", pc, fluid), h_end)
+    h_end = sat["h_end"]
+    h_l = min(cool.h_liquid(t_l - 0.01, pc), h_end)
     j_lc, x_lc, q_liquid = None, None, 0.0
     for j in range(n):
         t_aw = recovery_temperature(gas, mach[j])
@@ -130,7 +126,7 @@ def film_profile(design, th, gas: dict, st: dict, cool, mdot_film: float, t_inj:
         need = m_l * (h_end - h_l)                       # heat to reach saturation
         if q < need:
             h_l += q / m_l
-            t_l = PropsSI("T", "H", h_l, "P", pc, fluid)
+            t_l = cool.t_from_h(h_l, pc)
             out["q_film"][j] = q
             q_liquid += q
             continue
@@ -155,12 +151,7 @@ def film_profile(design, th, gas: dict, st: dict, cool, mdot_film: float, t_inj:
     else:
         # Gaseous film downstream: the evaporated fuel at t_end, no mixing, no reaction
         out["region"][j_lc + 1:] = GAS
-        if supercritical:
-            cp_v = PropsSI("C", "T", t_end + 5.0, "P", pc, fluid)
-            k_v = PropsSI("L", "T", t_end + 5.0, "P", pc, fluid)
-        else:
-            cp_v = PropsSI("C", "P", pc, "Q", 1, fluid)
-            k_v = PropsSI("L", "P", pc, "Q", 1, fluid)
+        cp_v, k_v = sat["cp_v"], sat["k_v"]
         sv_alpha = m_c * cp_v / (2 * math.pi * r[j_lc] * k_v)
         x_param = 0.0
         for j in range(j_lc + 1, n):
