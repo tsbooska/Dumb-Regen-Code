@@ -57,8 +57,11 @@ py -3.14 -m pip install rocketcea CoolProp numpy scipy matplotlib sv-ttk
 
 **Inputs (left)**
 - **Input tabs:** Engine, Geometry, Cooling, Channels, Injector. Hover over any input for a
-  description and typical range. `auto` lets the code choose the value. The example cases on the
-  Engine tab fill in complete inputs.
+  description and typical range; a **?** icon by a section title holds that section's notes (hover
+  or click it). `auto` lets the code choose the value. The example cases on the Engine tab fill in
+  complete inputs (anything a case does not set goes back to its default).
+- **Bad inputs:** Run analysis takes you to the offending field (tab, scroll, focus) and outlines it
+  in red until you edit it. Counts (channels, holes, stations) must be whole numbers.
 - **Cooling → Liner wall:** pick the liner material. It fills in the room-temperature conductivity
   (the thermal circuit uses one constant k) and sets the material for the structural checks.
 - **Cooling → Wall stress:** tick *Check wall stresses* to run the stress, fatigue and buckling
@@ -75,8 +78,11 @@ py -3.14 -m pip install rocketcea CoolProp numpy scipy matplotlib sv-ttk
 - **Channels → Channel optimizer:** tick *Optimize channels when running* to have Run analysis search
   the channel count and the width and height at each section within the limits given, write the result
   into the table and analyse it. Untick it to use the table as entered (manual or rib-sized widths).
+  The search takes minutes; **Cancel** in the status bar stops it after the channel count it is on.
 
-**Outputs (right).** Click **Run analysis**, then read the output tabs:
+**Outputs (right).** Click **Run analysis** (F5), then read the output tabs. Hover over a result
+tile for what it shows and what its colour means. If you change an input after a run, the Run button
+and the status bar say the results are out of date until you run again.
 - **Summary:** performance, geometry, thermal and feed tiles, and the engine, channel, thermal, feed
   and optimizer reports with their warnings. With film on, the Isp tiles show the delivered Isp with
   film (core Isp below it), the *Liquid film length* tile gives the film-covered length and the film
@@ -103,12 +109,24 @@ py -3.14 -m pip install rocketcea CoolProp numpy scipy matplotlib sv-ttk
 - **Engine, Temperatures, Heat flux, Coolant, Pressure budget, O/F sweep:** plots. Use the toolbar
   under each to zoom and pan.
 
+**Layout and scrolling**
+- Drag the divider between the inputs and the results to resize them, or click **Hide inputs** in
+  the header to give the results the full width.
+- The mouse wheel scrolls whatever is under the pointer (Shift + wheel scrolls sideways). It no
+  longer changes a dropdown's value when you scroll past it.
+- Results pages and plots scroll when the window is too small for them instead of being squashed
+  or cut off; their scrollbars appear only when needed.
+- Window size, maximised state and the inputs width are remembered between sessions.
+
 **Other controls**
-- **Save settings… / Load settings…** write every input (not the results) to a JSON file and read
-  it back. Inputs missing from an older file keep their current values; unknown entries are ignored.
-- **Export results…** saves the contour and thermal CSVs, the text report (engine, thermal, feed and
-  structural) and every plot as PNG.
-- **Dark mode** (switch in the header) is the default. The choice is saved to
+- **Save settings… / Load settings…** (Ctrl+S / Ctrl+O) write every input (not the results) to a JSON
+  file and read it back. Inputs missing from an older file keep their current values; unknown entries
+  are ignored.
+- **Export results…** (Ctrl+E) saves the contour and thermal CSVs, the text report (engine, thermal,
+  feed, structural and, when it ran, optimizer) and every plot that has content as PNG.
+- Report panes: select text and copy it with Ctrl+C, or right-click for Copy / Select all.
+- Shortcuts: F5 or Ctrl+Enter run, Ctrl+Tab switches tabs in the notebook that has the focus.
+- **Dark mode** (switch in the header) is the default. The choice and the window layout are saved to
   `~/.regen_engine_designer.json`.
 - The GUI declares Windows DPI awareness and scales its layout and plots, so it stays sharp at
   125 % / 150 % display scaling. Plots are drawn when their tab is first shown after a run.
